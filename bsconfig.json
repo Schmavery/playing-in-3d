@@ -1,0 +1,12 @@
+{
+  "name": "reprocessing",
+  "sources": [{
+    "dir": "src"
+  }],
+  "bs-dependencies": ["Reasongl"],
+  "entries": [ {
+    "backend": "js",
+    "main-module": "Index"
+  }],
+  "refmt": 3
+}

@@ -1,0 +1,19 @@
+{
+  "name": "3dgl-demo",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "bsb -make-world -backend js",
+    "watch": "bsb -make-world -backend js -w"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "bsb-native": "4.0.7000"
+  },
+  "dependencies": {
+    "Reasongl": "github:bsansouci/reasongl"
+  }
+}
