@@ -110,7 +110,11 @@ let getVertexData = str => {
           }
         | ["vt", x, y] => {
             ...data,
-            vertexTexture: [(fos(x), fos(y)), ...data.vertexTexture],
+            /* For some reason the y is flipped */
+            vertexTexture: [
+              (fos(x), 1.0 -. fos(y)),
+              ...data.vertexTexture,
+            ],
           }
         | _ => data
         },
