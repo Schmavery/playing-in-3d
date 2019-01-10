@@ -12,6 +12,7 @@ type buffers = {
   normalBuffer: Reasongl.Gl.bufferT,
   indexBuffer: Reasongl.Gl.bufferT,
   uvBuffer: Reasongl.Gl.bufferT,
+  texture: Reasongl.Gl.textureT,
   numIndexes: int,
 };
 

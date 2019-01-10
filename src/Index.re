@@ -101,7 +101,7 @@ let loadBuffer = (context, data, datatype, target) => {
   buffer;
 };
 
-let initBuffers = (context, buffers: Types.bufferArrays) => {
+let initBuffers = (context, buffers: Types.bufferArrays, texture) => {
   let positionBuffer =
     loadBuffer(context, buffers.positions, Float32, Constants.array_buffer);
   let normalBuffer =
@@ -120,6 +120,7 @@ let initBuffers = (context, buffers: Types.bufferArrays) => {
     normalBuffer,
     indexBuffer,
     uvBuffer,
+    texture,
     numIndexes: Array.length(buffers.indexes),
   };
 };
@@ -170,7 +171,7 @@ let look = [|0., 0., 0.1|];
 let first = ref(true);
 let time = ref(0.0);
 
-let drawScene = (window, context, program, buffers, gun, dt) => {
+let drawScene = (window, context, program, models, dt) => {
   Gl.clear(
     ~context,
     ~mask=Constants.color_buffer_bit lor Constants.depth_buffer_bit,
@@ -241,6 +242,7 @@ let drawScene = (window, context, program, buffers, gun, dt) => {
     first := false;
   };
 
+  let cubebuffers = Types.StringMap.find("cube", models);
   let drawWithOffset = (x, y, z, scale, grey) => {
     Gl.Mat4.identity(~out=modelMatrix);
     Gl.Mat4.rotate(
@@ -255,7 +257,7 @@ let drawScene = (window, context, program, buffers, gun, dt) => {
       ~vec=[|x, y, z|],
     );
     Gl.Mat4.scale(~out=modelMatrix, ~matrix=modelMatrix, ~vec=scale);
-    Draw.drawBuffer(
+    Draw.drawModel(
       projectionMatrix,
       modelMatrix,
       viewMatrix,
@@ -263,7 +265,7 @@ let drawScene = (window, context, program, buffers, gun, dt) => {
       grey,
       context,
       program,
-      buffers,
+      cubebuffers,
     );
   };
 
@@ -311,19 +313,19 @@ let drawScene = (window, context, program, buffers, gun, dt) => {
     ~rad=time^ *. 8.,
     ~vec=[|0., 1., 0.|],
   );
-  Draw.drawBuffer(
+  Draw.drawModel(
     projectionMatrix,
     modelMatrix,
     viewMatrix,
     pos,
-    2.3,
+    1.0,
     context,
     program,
-    gun,
+    Types.StringMap.find("gun", models),
   );
 };
 
-let setupImage = (context, image) => {
+let setupTexture = (context, image) => {
   let filter = Constants.linear;
   let texture = Gl.createTexture(~context);
   Gl.bindTexture(~context, ~target=Constants.texture_2d, ~texture);
@@ -345,49 +347,57 @@ let setupImage = (context, image) => {
     ~pname=Constants.texture_min_filter,
     ~param=filter,
   );
+  texture;
 };
 
-/* ObjLoader.loadModel("./models/texcube.obj", bufferArrays => */
-/* ObjLoader.loadModel("./models/sphere.obj", bufferArrays => */
-/* ObjLoader.loadModel("./models/spheresmooth.obj", bufferArrays => */
-ObjLoader.loadModel("./models/gun.obj", bufferArrays
-  /* ObjLoader.loadModel("./models/monkeysmooth.obj", bufferArrays => */
-  =>
-    Gl.loadImage(
-      ~filename="./textures/wall_pot.png",
-      /* ~filename="./textures/apple.png", */
-      ~loadOption=LoadRGBA,
-      ~callback=
-        imageData =>
-          switch (imageData) {
-          | None => failwith("Could not load image")
-          | Some(img) =>
-            let window = Gl.Window.init(~screen="main", ~argv=Sys.argv);
-            Js.log(window);
-            let windowW = 640;
-            let windowH = 480;
-            Gl.Window.setWindowSize(~window, ~width=windowW, ~height=windowH);
-
-            let context = Gl.Window.getContext(window);
-
-            setupImage(context, img);
-
-            Gl.enable(~context, Constants.depth_test);
-            Gl.enable(~context, Patch.cull_face);
-            /* The example didn't use viewport for some reason */
-            /* Gl.viewport(~context, ~x=0, ~y=0, ~width=windowW, ~height=windowH); */
-            let program = createProgram(context, Shaders.default);
-            Gl.useProgram(~context, program.program);
-            /* let buffers = initBuffers( */
-            /*   context, */
-            /*   Draw.createCubeBuffers(0., 0., 0., 1., 2.)); */
-            let buffers = initBuffers(context, Cube.buffers);
-            let gun = initBuffers(context, bufferArrays);
-            let displayFunc = dt =>
-              drawScene(window, context, program, buffers, gun, dt /. 1000.);
-            /* TODO Why is this ignored */
-            ignore @@ Gl.render(~window, ~displayFunc, ~keyDown, ~keyUp, ());
-          },
-      (),
-    )
+let loadModels = (names: list((string, string, string)), context, cb) => {
+  open Types;
+  let numModels = List.length(names);
+  let map = ref(StringMap.empty);
+  List.map(
+    ((name, model, image)) =>
+      ObjLoader.loadModel(model, bufferArrays =>
+        Gl.loadImage(
+          ~filename=image,
+          ~loadOption=LoadRGBA,
+          ~callback=
+            imageData =>
+              switch (imageData) {
+              | None => failwith("Could not load image")
+              | Some(img) =>
+                let texture = setupTexture(context, img);
+                let buffers = initBuffers(context, bufferArrays, texture);
+                map := StringMap.add(name, buffers, map^);
+                if (StringMap.cardinal(map^) == numModels) {
+                  cb(map^);
+                };
+              },
+          (),
+        )
+      ),
+    names,
   );
+};
+
+let window = Gl.Window.init(~screen="main", ~argv=Sys.argv);
+let windowW = 640;
+let windowH = 480;
+Gl.Window.setWindowSize(~window, ~width=windowW, ~height=windowH);
+let context = Gl.Window.getContext(window);
+Gl.enable(~context, Constants.depth_test);
+Gl.enable(~context, Patch.cull_face);
+let program = createProgram(context, Shaders.default);
+Gl.useProgram(~context, program.program);
+loadModels(
+  [
+    ("cube", "./models/texcube.obj", "./textures/wall_pot.png"),
+    ("gun", "./models/gun.obj", "./textures/guncolors.png"),
+  ],
+  context,
+  models => {
+    let displayFunc = dt =>
+      drawScene(window, context, program, models, dt /. 1000.);
+    /* TODO Why is this ignored */
+    ignore @@ Gl.render(~window, ~displayFunc, ~keyDown, ~keyUp, ());
+  },
+);

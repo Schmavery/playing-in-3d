@@ -24,7 +24,7 @@ let createCubeBuffers = (xOff, yOff, zOff, size, height, buffers) => {
   };
 };
 
-let drawBuffer =
+let drawModel =
     (
       projectionMatrix,
       modelMatrix,
@@ -33,9 +33,17 @@ let drawBuffer =
       grey,
       context,
       program: Shaders.programT,
-      {positionBuffer, normalBuffer, uvBuffer, indexBuffer, numIndexes}: Types.buffers,
+      {
+        positionBuffer,
+        normalBuffer,
+        uvBuffer,
+        indexBuffer,
+        texture,
+        numIndexes,
+      }: Types.buffers,
     ) => {
   open Types;
+  Gl.bindTexture(~context, ~target=Constants.texture_2d, ~texture);
   Gl.bindBuffer(
     ~context,
     ~target=Constants.array_buffer,
