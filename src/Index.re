@@ -1,7 +1,6 @@
 module Gl = Reasongl.Gl;
 module Constants = RGLConstants;
 
-
 let createShader = (context, source, kind) => {
   let shader = Gl.createShader(~context, kind);
   Gl.shaderSource(~context, ~shader, ~source);
@@ -15,10 +14,44 @@ let createShader = (context, source, kind) => {
   shader;
 };
 
-let createProgram = context => {
-  let vertexShader = createShader(context, Shaders.vsSource, Constants.vertex_shader);
+let generateVarList = (kind, l) =>
+  String.concat(
+    "\n",
+    List.map(
+      var =>
+        switch (var) {
+        | Shaders.Vec4(s) => kind ++ " vec4 " ++ s ++ ";"
+        | Vec3(s) => kind ++ " vec3 " ++ s ++ ";"
+        | Vec2(s) => kind ++ " vec2 " ++ s ++ ";"
+        | Sampler2D(s) => kind ++ " sampler2D " ++ s ++ ";"
+        | Mat4(s) => kind ++ " mat4 " ++ s ++ ";"
+        },
+      l,
+    ),
+  );
+
+let getVarName = var =>
+  switch (var) {
+  | Shaders.Vec4(s)
+  | Vec3(s)
+  | Vec2(s)
+  | Sampler2D(s)
+  | Mat4(s) => s
+  };
+
+let createProgram =
+    (context, {Shaders.attributes, uniforms, vertex, fragment}) => {
+  let attributesSource = generateVarList("attribute", attributes);
+  let uniformsSource = generateVarList("uniform", uniforms);
+  let fullVertexSource =
+    attributesSource ++ "\n" ++ uniformsSource ++ "\n" ++ vertex;
+  let fullFragmentSource = uniformsSource ++ "\n" ++ fragment;
+  Js.log(fullVertexSource);
+  Js.log(fullFragmentSource);
+  let vertexShader =
+    createShader(context, fullVertexSource, Constants.vertex_shader);
   let fragmentShader =
-    createShader(context, Shaders.fsSource, Constants.fragment_shader);
+    createShader(context, fullFragmentSource, Constants.fragment_shader);
   let program = Gl.createProgram(~context);
   Gl.attachShader(~context, ~program, ~shader=vertexShader);
   Gl.deleteShader(~context, vertexShader);
@@ -31,7 +64,29 @@ let createProgram = context => {
     prerr_endline(Gl.getProgramInfoLog(~context, program));
     raise(Failure("Could not link program"));
   };
-  program;
+  let attributeLocs =
+    List.fold_left(
+      (acc, v) =>
+        Types.StringMap.add(
+          getVarName(v),
+          Gl.getAttribLocation(~context, ~program, ~name=getVarName(v)),
+          acc,
+        ),
+      Types.StringMap.empty,
+      attributes,
+    );
+  let uniformLocs =
+    List.fold_left(
+      (acc, v) =>
+        Types.StringMap.add(
+          getVarName(v),
+          Gl.getUniformLocation(~context, ~program, ~name=getVarName(v)),
+          acc,
+        ),
+      Types.StringMap.empty,
+      uniforms,
+    );
+  {Shaders.attributeLocs, uniformLocs, program};
 };
 
 let loadBuffer = (context, data, datatype, target) => {
@@ -46,113 +101,76 @@ let loadBuffer = (context, data, datatype, target) => {
   buffer;
 };
 
-let initBuffers = context => {
+let initBuffers = (context, buffers: Types.bufferArrays) => {
   let positionBuffer =
-    loadBuffer(context, Cube.positions, Float32, Constants.array_buffer);
-  /* let colorBuffer = */
-  /*   loadBuffer(context, Cube.colors, Float32, Constants.array_buffer); */
-  let colorBuffer = Gl.createBuffer(~context);
+    loadBuffer(context, buffers.positions, Float32, Constants.array_buffer);
   let normalBuffer =
-    loadBuffer(context, Cube.normals, Float32, Constants.array_buffer);
+    loadBuffer(context, buffers.normals, Float32, Constants.array_buffer);
   let uvBuffer =
-    loadBuffer(context, Cube.uvs, Float32, Constants.array_buffer);
+    loadBuffer(context, buffers.uvs, Float32, Constants.array_buffer);
   let indexBuffer =
-    loadBuffer(context, Cube.indexes, Uint16, Constants.element_array_buffer);
+    loadBuffer(
+      context,
+      buffers.indexes,
+      Uint16,
+      Constants.element_array_buffer,
+    );
   {
     Types.positionBuffer,
-    colorBuffer,
     normalBuffer,
     indexBuffer,
     uvBuffer,
-    numIndexes: Cube.numIndexes,
+    numIndexes: Array.length(buffers.indexes),
   };
 };
 
-/* TODO: Move the getAttribLocation stuff */
-let configureAttribs =
-    (
-      context,
-      program,
-      {positionBuffer, colorBuffer, normalBuffer, indexBuffer, uvBuffer}: Types.buffers,
-    ) => {
-  Gl.bindBuffer(
-    ~context,
-    ~target=Constants.array_buffer,
-    ~buffer=positionBuffer,
-  );
-  let aVertexPosition =
-    Gl.getAttribLocation(~context, ~program, ~name="aVertexPosition");
-  Gl.vertexAttribPointer(
-    ~context,
-    ~attribute=aVertexPosition,
-    ~size=3,
-    ~type_=Constants.float_,
-    ~normalize=false,
-    ~stride=0,
-    ~offset=0,
-  );
-  Gl.enableVertexAttribArray(~context, ~attribute=aVertexPosition);
-
-  /* Gl.bindBuffer( */
-  /*   ~context, */
-  /*   ~target=Constants.array_buffer, */
-  /*   ~buffer=colorBuffer, */
-  /* ); */
-  /* let aVertexColor = */
-  /*   Gl.getAttribLocation(~context, ~program, ~name="aVertexColor"); */
-  /* Gl.vertexAttribPointer( */
-  /*   ~context, */
-  /*   ~attribute=aVertexColor, */
-  /*   ~size=4, */
-  /*   ~type_=Constants.float_, */
-  /*   ~normalize=false, */
-  /*   ~stride=0, */
-  /*   ~offset=0, */
-  /* ); */
-  /* Gl.enableVertexAttribArray(~context, ~attribute=aVertexColor); */
-
-  Gl.bindBuffer(~context, ~target=Constants.array_buffer, ~buffer=uvBuffer);
-  let aVertexUV = Gl.getAttribLocation(~context, ~program, ~name="aVertexUV");
-  Gl.vertexAttribPointer(
-    ~context,
-    ~attribute=aVertexUV,
-    ~size=2,
-    ~type_=Constants.float_,
-    ~normalize=false,
-    ~stride=0,
-    ~offset=0,
-  );
-  Gl.enableVertexAttribArray(~context, ~attribute=aVertexUV);
-
-  Gl.bindBuffer(
-    ~context,
-    ~target=Constants.array_buffer,
-    ~buffer=normalBuffer,
-  );
-  let aVertexNormal =
-    Gl.getAttribLocation(~context, ~program, ~name="aVertexNormal");
-  Gl.vertexAttribPointer(
-    ~context,
-    ~attribute=aVertexNormal,
-    ~size=3,
-    ~type_=Constants.float_,
-    ~normalize=false,
-    ~stride=0,
-    ~offset=0,
-  );
-  Gl.enableVertexAttribArray(~context, ~attribute=aVertexNormal);
-
-  Gl.bindBuffer(
-    ~context,
-    ~target=Constants.element_array_buffer,
-    ~buffer=indexBuffer,
-  );
+type keysT = {
+  mutable left: bool,
+  mutable right: bool,
+  mutable up: bool,
+  mutable down: bool,
+  mutable space: bool,
 };
 
-let totalTime = ref(0.0);
+let keys = {left: false, right: false, up: false, down: false, space: false};
 
-let drawScene = (window, context, program, buffers, dt) => {
-  totalTime := totalTime^ +. dt;
+let keyDown = (~keycode, ~repeat) =>
+  switch ((keycode: Gl.Events.keycodeT)) {
+  | A
+  | Left => keys.left = true
+  | D
+  | Right => keys.right = true
+  | W
+  | Up => keys.up = true
+  | S
+  | Down => keys.down = true
+  | Space => keys.space = true
+  | _ => ()
+  };
+
+let keyUp = (~keycode) =>
+  switch ((keycode: Gl.Events.keycodeT)) {
+  | A
+  | Left => keys.left = false
+  | D
+  | Right => keys.right = false
+  | W
+  | Up => keys.up = false
+  | S
+  | Down => keys.down = false
+  | Space => keys.space = false
+  | _ => ()
+  };
+
+let moveSpeed = 30.;
+let turnSpeed = 1.;
+let pos = [|4., 1.75, 6.|];
+let look = [|0., 0., 0.1|];
+
+let first = ref(true);
+let time = ref(0.0);
+
+let drawScene = (window, context, program, buffers, gun, dt) => {
   Gl.clear(
     ~context,
     ~mask=Constants.color_buffer_bit lor Constants.depth_buffer_bit,
@@ -170,65 +188,138 @@ let drawScene = (window, context, program, buffers, dt) => {
     ~far=100.0,
   );
 
-  let modelViewMatrix = Gl.Mat4.create();
-  Gl.Mat4.translate(
-    ~out=modelViewMatrix,
-    ~matrix=modelViewMatrix,
-    ~vec=[|0.0, 0.0, (-6.0)|],
-  );
+  if (keys.space) {
+    time := time^ +. dt;
+  };
+  if (keys.up) {
+    let moveAmount = Patch.Vec3f.make();
+    Patch.Vec3f.scale(moveAmount, look, -. dt *. moveSpeed);
 
-  Gl.Mat4.rotate(
-    ~out=modelViewMatrix,
-    ~matrix=modelViewMatrix,
-    ~rad=totalTime^,
-    ~vec=[|0., 1., 0.|],
+    let [|x, _, y|] = Patch.Vec3f.(pos + moveAmount);
+    let newX = int_of_float(x);
+    let newY = int_of_float(y);
+    if (newX
+        + newY
+        * Maze.mazeDef.width < Array.length(Maze.mazeDef.map)
+        && Maze.mazeDef.map[newX + newY * Maze.mazeDef.width] == 0) {
+      Patch.Vec3f.add(pos, pos, moveAmount);
+    };
+  };
+  if (keys.down) {
+    let moveAmount = Patch.Vec3f.make();
+    Patch.Vec3f.scale(moveAmount, look, dt *. moveSpeed);
+    let [|x, _, y|] = Patch.Vec3f.(pos + moveAmount);
+    let newX = int_of_float(x);
+    let newY = int_of_float(y);
+    if (newX
+        + newY
+        * Maze.mazeDef.width < Array.length(Maze.mazeDef.map)
+        && Maze.mazeDef.map[newX + newY * Maze.mazeDef.width] == 0) {
+      Patch.Vec3f.add(pos, pos, moveAmount);
+    };
+  };
+  if (keys.left) {
+    let rotate = Patch.Mat3f.createYRotation(dt *. turnSpeed);
+    Patch.Mat3f.matvecmul(rotate, look);
+  };
+  if (keys.right) {
+    let rotate = Patch.Mat3f.createYRotation(-. dt *. turnSpeed);
+    Patch.Mat3f.matvecmul(rotate, look);
+  };
+  let viewMatrix = Patch.Mat4f.make();
+  Patch.Mat4f.lookAt(
+    viewMatrix,
+    Patch.Vec3f.(look + pos),
+    pos,
+    [|0., 1., 0.|],
+  );
+  let viewMatrix = Patch.Mat4f.toJsMat4(viewMatrix);
+
+  let modelMatrix = Gl.Mat4.create();
+  if (first^) {
+    Js.log(context);
+    first := false;
+  };
+
+  let drawWithOffset = (x, y, z, scale, grey) => {
+    Gl.Mat4.identity(~out=modelMatrix);
+    Gl.Mat4.rotate(
+      ~out=modelMatrix,
+      ~matrix=modelMatrix,
+      ~rad=0.00001,
+      ~vec=[|0., 1., 0.|],
+    );
+    Gl.Mat4.translate(
+      ~out=modelMatrix,
+      ~matrix=modelMatrix,
+      ~vec=[|x, y, z|],
+    );
+    Gl.Mat4.scale(~out=modelMatrix, ~matrix=modelMatrix, ~vec=scale);
+    Draw.drawBuffer(
+      projectionMatrix,
+      modelMatrix,
+      viewMatrix,
+      pos,
+      grey,
+      context,
+      program,
+      buffers,
+    );
+  };
+
+  let wallScale = [|1.0, 3.0, 1.0|];
+  let floorScale = [|40.0, 1.0, 40.0|];
+
+  for (y in 0 to Maze.mazeDef.height - 1) {
+    for (x in 0 to Maze.mazeDef.width - 1) {
+      if (Maze.mazeDef.map[x + y * Maze.mazeDef.width] == 1) {
+        drawWithOffset(
+          float_of_int(x),
+          0.0,
+          float_of_int(y),
+          wallScale,
+          1.0,
+        );
+      };
+    };
+  };
+  drawWithOffset(0.0, -1.0, 0.0, floorScale, 0.3);
+  drawWithOffset(0.0, 3.0, 0.0, floorScale, 0.3);
+
+  Gl.Mat4.identity(~out=modelMatrix);
+  Gl.Mat4.identity(~out=viewMatrix);
+  Gl.Mat4.translate(
+    ~out=modelMatrix,
+    ~matrix=modelMatrix,
+    ~vec=[|0., (-0.5), (-1.3)|],
+  );
+  let scale = 0.3;
+  Gl.Mat4.scale(
+    ~out=modelMatrix,
+    ~matrix=modelMatrix,
+    ~vec=[|scale, scale, scale|],
   );
   Gl.Mat4.rotate(
-    ~out=modelViewMatrix,
-    ~matrix=modelViewMatrix,
-    ~rad=totalTime^ /. 2.,
+    ~out=modelMatrix,
+    ~matrix=modelMatrix,
+    ~rad=-1.3,
     ~vec=[|1., 0., 0.|],
   );
-
-  configureAttribs(context, program, buffers);
-
-  let uProjectionMatrix =
-    Gl.getUniformLocation(~context, ~program, ~name="uProjectionMatrix");
-  Gl.uniformMatrix4fv(
-    ~context,
-    ~location=uProjectionMatrix,
-    ~value=projectionMatrix,
+  Gl.Mat4.rotate(
+    ~out=modelMatrix,
+    ~matrix=modelMatrix,
+    ~rad=time^ *. 8.,
+    ~vec=[|0., 1., 0.|],
   );
-
-  let uLightDirection =
-    Gl.getUniformLocation(~context, ~program, ~name="uLightDirection");
-  Gl.uniform3f(~context, ~location=uLightDirection, ~v1=0., ~v2=1., ~v3=1.);
-
-  let uLightDirection =
-    Gl.getUniformLocation(~context, ~program, ~name="uLightDirection");
-  Gl.uniform3f(~context, ~location=uLightDirection, ~v1=0., ~v2=1., ~v3=1.);
-
-  let uTintColor =
-    Gl.getUniformLocation(~context, ~program, ~name="uTintColor");
-  Gl.uniform3f(~context, ~location=uTintColor, ~v1=1.0, ~v2=0.0, ~v3=0.0);
-
-  let uModelViewMatrix =
-    Gl.getUniformLocation(~context, ~program, ~name="uModelViewMatrix");
-  Gl.uniformMatrix4fv(
-    ~context,
-    ~location=uModelViewMatrix,
-    ~value=modelViewMatrix,
-  );
-
-  let uSampler = Gl.getUniformLocation(~context, ~program, ~name="uSampler");
-  Gl.uniform1i(~context, ~location=uSampler, ~value=0);
-
-  Gl.drawElements(
-    ~context,
-    ~mode=Constants.triangles,
-    ~count=buffers.numIndexes,
-    ~type_=Constants.unsigned_short,
-    ~offset=0,
+  Draw.drawBuffer(
+    projectionMatrix,
+    modelMatrix,
+    viewMatrix,
+    pos,
+    2.3,
+    context,
+    program,
+    gun,
   );
 };
 
@@ -259,38 +350,44 @@ let setupImage = (context, image) => {
 /* ObjLoader.loadModel("./models/texcube.obj", bufferArrays => */
 /* ObjLoader.loadModel("./models/sphere.obj", bufferArrays => */
 /* ObjLoader.loadModel("./models/spheresmooth.obj", bufferArrays => */
-ObjLoader.loadModel("./models/monkey.obj", bufferArrays =>
-/* ObjLoader.loadModel("./models/monkeysmooth.obj", bufferArrays => */
-  Gl.loadImage(
-    ~filename="./textures/wall_pot.png",
-    /* ~filename="./textures/apple.png", */
-    ~loadOption=LoadRGBA,
-    ~callback=
-      imageData =>
-        switch (imageData) {
-        | None => failwith("Could not load image")
-        | Some(img) =>
-          let window = Gl.Window.init(~screen="main", ~argv=Sys.argv);
-          let windowW = 640;
-          let windowH = 480;
-          Gl.Window.setWindowSize(~window, ~width=windowW, ~height=windowH);
+ObjLoader.loadModel("./models/gun.obj", bufferArrays
+  /* ObjLoader.loadModel("./models/monkeysmooth.obj", bufferArrays => */
+  =>
+    Gl.loadImage(
+      ~filename="./textures/wall_pot.png",
+      /* ~filename="./textures/apple.png", */
+      ~loadOption=LoadRGBA,
+      ~callback=
+        imageData =>
+          switch (imageData) {
+          | None => failwith("Could not load image")
+          | Some(img) =>
+            let window = Gl.Window.init(~screen="main", ~argv=Sys.argv);
+            Js.log(window);
+            let windowW = 640;
+            let windowH = 480;
+            Gl.Window.setWindowSize(~window, ~width=windowW, ~height=windowH);
 
-          let context = Gl.Window.getContext(window);
+            let context = Gl.Window.getContext(window);
 
-          setupImage(context, img);
+            setupImage(context, img);
 
-          Gl.enable(~context, Constants.depth_test);
-          /* The example didn't use viewport for some reason */
-          /* Gl.viewport(~context, ~x=0, ~y=0, ~width=windowW, ~height=windowH); */
-          let program = createProgram(context);
-          Gl.useProgram(~context, program);
-          /* let buffers = initBuffers(context); */
-          let buffers = ObjLoader.initModelBuffers(context, bufferArrays);
-          let displayFunc = dt =>
-            drawScene(window, context, program, buffers, dt /. 1000.);
-          /* TODO Why is this ignored */
-          ignore @@ Gl.render(~window, ~displayFunc, ());
-        },
-    (),
-  )
-);
+            Gl.enable(~context, Constants.depth_test);
+            Gl.enable(~context, Patch.cull_face);
+            /* The example didn't use viewport for some reason */
+            /* Gl.viewport(~context, ~x=0, ~y=0, ~width=windowW, ~height=windowH); */
+            let program = createProgram(context, Shaders.default);
+            Gl.useProgram(~context, program.program);
+            /* let buffers = initBuffers( */
+            /*   context, */
+            /*   Draw.createCubeBuffers(0., 0., 0., 1., 2.)); */
+            let buffers = initBuffers(context, Cube.buffers);
+            let gun = initBuffers(context, bufferArrays);
+            let displayFunc = dt =>
+              drawScene(window, context, program, buffers, gun, dt /. 1000.);
+            /* TODO Why is this ignored */
+            ignore @@ Gl.render(~window, ~displayFunc, ~keyDown, ~keyUp, ());
+          },
+      (),
+    )
+  );

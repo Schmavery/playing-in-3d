@@ -179,35 +179,3 @@ let loadBuffer = (context, data, datatype, target) => {
   );
   buffer;
 };
-
-let initModelBuffers = (context, buffers: Types.bufferArrays): Types.buffers => {
-  let positionBuffer =
-    loadBuffer(
-      context,
-      buffers.positions,
-      Float32,
-      RGLConstants.array_buffer,
-    );
-  /* TODO remove color or something */
-  let colorBuffer = Reasongl.Gl.createBuffer(~context);
-  let normalBuffer =
-    loadBuffer(context, buffers.normals, Float32, RGLConstants.array_buffer);
-  let uvBuffer =
-    loadBuffer(context, buffers.uvs, Float32, RGLConstants.array_buffer);
-  let indexBuffer =
-    loadBuffer(
-      context,
-      buffers.indexes,
-      Uint16,
-      RGLConstants.element_array_buffer,
-    );
-  let numIndexes = Array.length(buffers.indexes);
-  {
-    positionBuffer,
-    colorBuffer,
-    normalBuffer,
-    indexBuffer,
-    uvBuffer,
-    numIndexes,
-  };
-};
