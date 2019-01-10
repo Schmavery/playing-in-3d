@@ -171,7 +171,7 @@ let look = [|0., 0., 0.1|];
 let first = ref(true);
 let time = ref(0.0);
 
-let drawScene = (window, context, program, models, dt) => {
+let drawScene = (window, context, program, lightingProgram, models, dt) => {
   Gl.clear(
     ~context,
     ~mask=Constants.color_buffer_bit lor Constants.depth_buffer_bit,
@@ -264,7 +264,7 @@ let drawScene = (window, context, program, models, dt) => {
       pos,
       grey,
       context,
-      program,
+      lightingProgram,
       cubebuffers,
     );
   };
@@ -272,6 +272,7 @@ let drawScene = (window, context, program, models, dt) => {
   let wallScale = [|1.0, 3.0, 1.0|];
   let floorScale = [|40.0, 1.0, 40.0|];
 
+  Gl.useProgram(~context, lightingProgram.program);
   for (y in 0 to Maze.mazeDef.height - 1) {
     for (x in 0 to Maze.mazeDef.width - 1) {
       if (Maze.mazeDef.map[x + y * Maze.mazeDef.width] == 1) {
@@ -290,6 +291,16 @@ let drawScene = (window, context, program, models, dt) => {
 
   Gl.Mat4.identity(~out=modelMatrix);
   Gl.Mat4.identity(~out=viewMatrix);
+  /* let gunMoveAmount = Patch.Vec3f.make(); */
+  /* Patch.Vec3f.scale(gunMoveAmount, look, -50.0); */
+  /* Js.log(pos); */
+  /* Js.log(gunMoveAmount); */
+  /* let [|gunx, guny, gunz|] = Patch.Vec3f.(pos + gunMoveAmount); */
+  /* Gl.Mat4.translate( */
+  /*   ~out=modelMatrix, */
+  /*   ~matrix=modelMatrix, */
+  /*   ~vec=[|gunx, (0.5), gunz|], */
+  /* ); */
   Gl.Mat4.translate(
     ~out=modelMatrix,
     ~matrix=modelMatrix,
@@ -313,6 +324,7 @@ let drawScene = (window, context, program, models, dt) => {
     ~rad=time^ *. 8.,
     ~vec=[|0., 1., 0.|],
   );
+  Gl.useProgram(~context, program.Shaders.program);
   Draw.drawModel(
     projectionMatrix,
     modelMatrix,
@@ -387,7 +399,7 @@ let context = Gl.Window.getContext(window);
 Gl.enable(~context, Constants.depth_test);
 Gl.enable(~context, Patch.cull_face);
 let program = createProgram(context, Shaders.default);
-Gl.useProgram(~context, program.program);
+let lightingProgram = createProgram(context, Shaders.distanceLit);
 loadModels(
   [
     ("cube", "./models/texcube.obj", "./textures/wall_pot.png"),
@@ -396,7 +408,14 @@ loadModels(
   context,
   models => {
     let displayFunc = dt =>
-      drawScene(window, context, program, models, dt /. 1000.);
+      drawScene(
+        window,
+        context,
+        program,
+        lightingProgram,
+        models,
+        dt /. 1000.,
+      );
     /* TODO Why is this ignored */
     ignore @@ Gl.render(~window, ~displayFunc, ~keyDown, ~keyUp, ());
   },

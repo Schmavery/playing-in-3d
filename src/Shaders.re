@@ -35,6 +35,46 @@ let default = {
   vertex: {|
   varying vec4 vNormal;
   varying vec2 vUV;
+
+  void main(void) {
+    gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * aVertexPosition;
+    vNormal = normalize(uViewMatrix * uModelMatrix * vec4(aVertexNormal, 0.0));
+    vUV = aVertexUV;
+  }
+|},
+  fragment: {|
+  varying vec4 vNormal;
+  varying vec2 vUV;
+
+  void main(void) {
+    vec4 s = texture2D(uSampler, vUV);
+    vec4 ambient = vec4(0.2, 0.2, 0.2, 0.0);
+    vec4 lightDirection = normalize(vec4(-1.0, 1.0, 0.0, 0.0));
+    /* float l = clamp(-dot(vNormal, lightDirection), 0.0, 1.0); */
+    float l = clamp(dot(vNormal, lightDirection), 0.0, 1.0);
+    /* float l = length(dot(vNormal, normalize(lightDirection))); */
+    gl_FragColor = s * vec4(l, l, l, l) + ambient;
+  }
+|},
+};
+
+let distanceLit = {
+  attributes: [
+    Vec4("aVertexPosition"),
+    Vec3("aVertexNormal"),
+    Vec2("aVertexUV"),
+  ],
+  uniforms: [
+    Mat4("uModelMatrix"),
+    Mat4("uViewMatrix"),
+    Mat4("uProjectionMatrix"),
+    Vec3("uPlayerPos"),
+    Vec4("uTintColor"),
+    Sampler2D("uSampler"),
+  ],
+  vertex: {|
+  varying vec4 vNormal;
+  varying vec2 vUV;
   varying vec4 world_Position;
 
   void main(void) {
@@ -52,7 +92,7 @@ let default = {
 
   void main(void) {
     vec4 s = texture2D(uSampler, vUV);
-    /* float l = clamp(dot(vNormal.xyz, normalize(uLightDirection)), 0.0, 1.0); */
+    /* float l = clamp(-dot(vNormal.xyz, normalize(lightDirection)), 0.0, 1.0); */
     /* vec4 ambient = vec4(0.2, 0.2, 0.2, 0.0); */
     /* float l = length(dot(vNormal.xyz, normalize(uLightDirection))); */
     /* gl_FragColor = s * vec4(l, l, l, l) + ambient; */
