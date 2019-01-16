@@ -18,6 +18,31 @@ type programT = {
   program: Reasongl.Gl.programT,
 };
 
+let generateVarList = (kind, l) =>
+  String.concat(
+    "\n",
+    List.map(
+      var =>
+        switch (var) {
+        | Vec4(s) => kind ++ " vec4 " ++ s ++ ";"
+        | Vec3(s) => kind ++ " vec3 " ++ s ++ ";"
+        | Vec2(s) => kind ++ " vec2 " ++ s ++ ";"
+        | Sampler2D(s) => kind ++ " sampler2D " ++ s ++ ";"
+        | Mat4(s) => kind ++ " mat4 " ++ s ++ ";"
+        },
+      l,
+    ),
+  );
+
+let getVarName = var =>
+  switch (var) {
+  | Vec4(s)
+  | Vec3(s)
+  | Vec2(s)
+  | Sampler2D(s)
+  | Mat4(s) => s
+  };
+
 let default = {
   attributes: [
     Vec4("aVertexPosition"),
@@ -49,11 +74,12 @@ let default = {
   void main(void) {
     vec4 s = texture2D(uSampler, vUV);
     vec4 ambient = vec4(0.2, 0.2, 0.2, 0.0);
-    vec4 lightDirection = normalize(vec4(-1.0, 1.0, 0.0, 0.0));
+    vec4 lightDirection = normalize(vec4(1.0, -1.0, 0.0, 0.0));
     /* float l = clamp(-dot(vNormal, lightDirection), 0.0, 1.0); */
-    float l = clamp(dot(vNormal, lightDirection), 0.0, 1.0);
+    float l = clamp(-dot(vNormal, lightDirection), 0.0, 1.0);
     /* float l = length(dot(vNormal, normalize(lightDirection))); */
-    gl_FragColor = s * vec4(l, l, l, l) + ambient;
+    gl_FragColor = s * vec4(l, l, l, 1.) + ambient * uTintColor;
+    /* gl_FragColor = s; */
   }
 |},
 };

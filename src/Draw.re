@@ -24,13 +24,103 @@ let createCubeBuffers = (xOff, yOff, zOff, size, height, buffers) => {
   };
 };
 
+let setupTexture = (context, image) => {
+  let filter = Constants.linear;
+  let texture = Gl.createTexture(~context);
+  Gl.bindTexture(~context, ~target=Constants.texture_2d, ~texture);
+  Gl.texImage2DWithImage(
+    ~context,
+    ~target=Constants.texture_2d,
+    ~level=0,
+    ~image,
+  );
+  Gl.texParameteri(
+    ~context,
+    ~target=Constants.texture_2d,
+    ~pname=Constants.texture_mag_filter,
+    ~param=filter,
+  );
+  Gl.texParameteri(
+    ~context,
+    ~target=Constants.texture_2d,
+    ~pname=Constants.texture_min_filter,
+    ~param=filter,
+  );
+  texture;
+};
+
+let loadBuffer = (context, data, datatype, target) => {
+  let buffer = Gl.createBuffer(~context);
+  Gl.bindBuffer(~context, ~target, ~buffer);
+  Gl.bufferData(
+    ~context,
+    ~target,
+    ~data=Gl.Bigarray.(of_array(datatype, data)),
+    ~usage=Constants.static_draw,
+  );
+  buffer;
+};
+
+let initBuffers = (context, buffers: Types.bufferArrays, texture) => {
+  let positionBuffer =
+    loadBuffer(context, buffers.positions, Float32, Constants.array_buffer);
+  let normalBuffer =
+    loadBuffer(context, buffers.normals, Float32, Constants.array_buffer);
+  let uvBuffer =
+    loadBuffer(context, buffers.uvs, Float32, Constants.array_buffer);
+  let indexBuffer =
+    loadBuffer(
+      context,
+      buffers.indexes,
+      Uint16,
+      Constants.element_array_buffer,
+    );
+  {
+    Types.positionBuffer,
+    normalBuffer,
+    indexBuffer,
+    uvBuffer,
+    texture,
+    numIndexes: Array.length(buffers.indexes),
+  };
+};
+
+let loadModels = (names: list((string, string, string)), context, cb) => {
+  open Types;
+  let numModels = List.length(names);
+  let map = ref(StringMap.empty);
+  List.map(
+    ((name, model, image)) =>
+      ObjLoader.loadModel(model, bufferArrays =>
+        Gl.loadImage(
+          ~filename=image,
+          ~loadOption=LoadRGBA,
+          ~callback=
+            imageData =>
+              switch (imageData) {
+              | None => failwith("Could not load image")
+              | Some(img) =>
+                let texture = setupTexture(context, img);
+                let buffers = initBuffers(context, bufferArrays, texture);
+                map := StringMap.add(name, buffers, map^);
+                if (StringMap.cardinal(map^) == numModels) {
+                  cb(map^);
+                };
+              },
+          (),
+        )
+      ),
+    names,
+  );
+};
+
 let drawModel =
     (
       projectionMatrix,
       modelMatrix,
       viewMatrix,
       [|playerx, playery, playerz|],
-      grey,
+      (r, g, b, a),
       context,
       program: Shaders.programT,
       {
@@ -115,14 +205,7 @@ let drawModel =
   );
 
   let uTintColor = StringMap.find("uTintColor", program.uniformLocs);
-  Gl.uniform4f(
-    ~context,
-    ~location=uTintColor,
-    ~v1=grey,
-    ~v2=grey,
-    ~v3=grey,
-    ~v4=grey,
-  );
+  Gl.uniform4f(~context, ~location=uTintColor, ~v1=r, ~v2=g, ~v3=b, ~v4=a);
 
   let uModelMatrix = StringMap.find("uModelMatrix", program.uniformLocs);
   Gl.uniformMatrix4fv(~context, ~location=uModelMatrix, ~value=modelMatrix);

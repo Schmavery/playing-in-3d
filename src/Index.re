@@ -14,35 +14,10 @@ let createShader = (context, source, kind) => {
   shader;
 };
 
-let generateVarList = (kind, l) =>
-  String.concat(
-    "\n",
-    List.map(
-      var =>
-        switch (var) {
-        | Shaders.Vec4(s) => kind ++ " vec4 " ++ s ++ ";"
-        | Vec3(s) => kind ++ " vec3 " ++ s ++ ";"
-        | Vec2(s) => kind ++ " vec2 " ++ s ++ ";"
-        | Sampler2D(s) => kind ++ " sampler2D " ++ s ++ ";"
-        | Mat4(s) => kind ++ " mat4 " ++ s ++ ";"
-        },
-      l,
-    ),
-  );
-
-let getVarName = var =>
-  switch (var) {
-  | Shaders.Vec4(s)
-  | Vec3(s)
-  | Vec2(s)
-  | Sampler2D(s)
-  | Mat4(s) => s
-  };
-
 let createProgram =
     (context, {Shaders.attributes, uniforms, vertex, fragment}) => {
-  let attributesSource = generateVarList("attribute", attributes);
-  let uniformsSource = generateVarList("uniform", uniforms);
+  let attributesSource = Shaders.generateVarList("attribute", attributes);
+  let uniformsSource = Shaders.generateVarList("uniform", uniforms);
   let fullVertexSource =
     attributesSource ++ "\n" ++ uniformsSource ++ "\n" ++ vertex;
   let fullFragmentSource = uniformsSource ++ "\n" ++ fragment;
@@ -68,8 +43,12 @@ let createProgram =
     List.fold_left(
       (acc, v) =>
         Types.StringMap.add(
-          getVarName(v),
-          Gl.getAttribLocation(~context, ~program, ~name=getVarName(v)),
+          Shaders.getVarName(v),
+          Gl.getAttribLocation(
+            ~context,
+            ~program,
+            ~name=Shaders.getVarName(v),
+          ),
           acc,
         ),
       Types.StringMap.empty,
@@ -79,50 +58,18 @@ let createProgram =
     List.fold_left(
       (acc, v) =>
         Types.StringMap.add(
-          getVarName(v),
-          Gl.getUniformLocation(~context, ~program, ~name=getVarName(v)),
+          Shaders.getVarName(v),
+          Gl.getUniformLocation(
+            ~context,
+            ~program,
+            ~name=Shaders.getVarName(v),
+          ),
           acc,
         ),
       Types.StringMap.empty,
       uniforms,
     );
   {Shaders.attributeLocs, uniformLocs, program};
-};
-
-let loadBuffer = (context, data, datatype, target) => {
-  let buffer = Gl.createBuffer(~context);
-  Gl.bindBuffer(~context, ~target, ~buffer);
-  Gl.bufferData(
-    ~context,
-    ~target,
-    ~data=Gl.Bigarray.(of_array(datatype, data)),
-    ~usage=Constants.static_draw,
-  );
-  buffer;
-};
-
-let initBuffers = (context, buffers: Types.bufferArrays, texture) => {
-  let positionBuffer =
-    loadBuffer(context, buffers.positions, Float32, Constants.array_buffer);
-  let normalBuffer =
-    loadBuffer(context, buffers.normals, Float32, Constants.array_buffer);
-  let uvBuffer =
-    loadBuffer(context, buffers.uvs, Float32, Constants.array_buffer);
-  let indexBuffer =
-    loadBuffer(
-      context,
-      buffers.indexes,
-      Uint16,
-      Constants.element_array_buffer,
-    );
-  {
-    Types.positionBuffer,
-    normalBuffer,
-    indexBuffer,
-    uvBuffer,
-    texture,
-    numIndexes: Array.length(buffers.indexes),
-  };
 };
 
 type keysT = {
@@ -163,6 +110,66 @@ let keyUp = (~keycode) =>
   | _ => ()
   };
 
+let intersectRectCircle =
+    (
+      ~rectPos as (rx, ry),
+      ~rectW,
+      ~rectH,
+      ~circlePos as (cx, cy),
+      ~circleRad,
+    ) => {
+  let halfW = rectW /. 2.;
+  let halfH = rectH /. 2.;
+  let cdistX = abs_float(cx -. (rx +. halfW));
+  let cdistY = abs_float(cy -. (ry +. halfH));
+  if (cdistX > halfW +. circleRad || cdistY > halfH +. circleRad) {
+    false;
+  } else if (cdistX <= halfW || cdistY <= halfH) {
+    true;
+  } else {
+    let cornerDistSq = (cdistX -. halfW) ** 2. +. (cdistY -. halfH) ** 2.;
+    cornerDistSq <= circleRad ** 2.;
+  };
+};
+let playerCollidesWithWall = (px, py, rad, wallSize, walls) =>
+  List.exists(
+    ((mapX, mapY)) =>
+      intersectRectCircle(
+        ~rectPos=(
+          float_of_int(mapX) *. wallSize,
+          float_of_int(mapY) *. wallSize,
+        ),
+        ~rectW=wallSize,
+        ~rectH=wallSize,
+        ~circlePos=(px, py),
+        ~circleRad=rad,
+      ),
+    walls,
+  );
+let tryToMove = (moveAmount, pos, walls, maze: Maze.t) => {
+  let [|x, _, y|] = Patch.Vec3f.(pos + moveAmount);
+  if (int_of_float(x) < maze.width
+      && x >= 0.
+      && int_of_float(y) < maze.height
+      && y >= 0.
+      && !playerCollidesWithWall(x, y, 1.0, 1.0, walls)) {
+    Patch.Vec3f.add(pos, pos, moveAmount);
+  };
+};
+let getWalls = (maze: Maze.t) => {
+  let walls = ref([]);
+  for (y in 0 to maze.height - 1) {
+    for (x in 0 to maze.width - 1) {
+      /* for (x in 0 to 1) { */
+      if (maze.map[x + y * maze.width] == 1) {
+        walls := [(x, y), ...walls^];
+      };
+    };
+  };
+  walls^;
+};
+let walls = getWalls(Maze.mazeDef);
+
 let moveSpeed = 30.;
 let turnSpeed = 1.;
 let pos = [|4., 1.75, 6.|];
@@ -171,53 +178,33 @@ let look = [|0., 0., 0.1|];
 let first = ref(true);
 let time = ref(0.0);
 
-let drawScene = (window, context, program, lightingProgram, models, dt) => {
+let drawScene =
+    (window, context, projectionMatrix, program, lightingProgram, models, dt) => {
   Gl.clear(
     ~context,
     ~mask=Constants.color_buffer_bit lor Constants.depth_buffer_bit,
   );
 
-  let w = Gl.Window.getWidth(window);
-  let h = Gl.Window.getHeight(window);
-  let projectionMatrix = Gl.Mat4.create();
-
-  Patch.perspective(
-    ~out=projectionMatrix,
-    ~fovy=45. *. Patch.pi /. 180.,
-    ~aspect=float_of_int(w) /. float_of_int(h),
-    ~near=0.1,
-    ~far=100.0,
-  );
-
   if (keys.space) {
     time := time^ +. dt;
   };
+  if (first^) {
+    Js.log("walls:");
+    Js.log(Array.of_list(walls));
+  };
   if (keys.up) {
     let moveAmount = Patch.Vec3f.make();
-    Patch.Vec3f.scale(moveAmount, look, -. dt *. moveSpeed);
-
-    let [|x, _, y|] = Patch.Vec3f.(pos + moveAmount);
-    let newX = int_of_float(x);
-    let newY = int_of_float(y);
-    if (newX
-        + newY
-        * Maze.mazeDef.width < Array.length(Maze.mazeDef.map)
-        && Maze.mazeDef.map[newX + newY * Maze.mazeDef.width] == 0) {
-      Patch.Vec3f.add(pos, pos, moveAmount);
-    };
+    Patch.Vec3f.scale(moveAmount, look, -. dt *. moveSpeed *. 2.);
+    let [|x, _, y|] = moveAmount;
+    tryToMove([|x, 0., 0.|], pos, walls, Maze.mazeDef);
+    tryToMove([|0., 0., y|], pos, walls, Maze.mazeDef);
   };
   if (keys.down) {
     let moveAmount = Patch.Vec3f.make();
     Patch.Vec3f.scale(moveAmount, look, dt *. moveSpeed);
-    let [|x, _, y|] = Patch.Vec3f.(pos + moveAmount);
-    let newX = int_of_float(x);
-    let newY = int_of_float(y);
-    if (newX
-        + newY
-        * Maze.mazeDef.width < Array.length(Maze.mazeDef.map)
-        && Maze.mazeDef.map[newX + newY * Maze.mazeDef.width] == 0) {
-      Patch.Vec3f.add(pos, pos, moveAmount);
-    };
+    let [|x, _, y|] = moveAmount;
+    tryToMove([|x, 0., 0.|], pos, walls, Maze.mazeDef);
+    tryToMove([|0., 0., y|], pos, walls, Maze.mazeDef);
   };
   if (keys.left) {
     let rotate = Patch.Mat3f.createYRotation(dt *. turnSpeed);
@@ -227,6 +214,7 @@ let drawScene = (window, context, program, lightingProgram, models, dt) => {
     let rotate = Patch.Mat3f.createYRotation(-. dt *. turnSpeed);
     Patch.Mat3f.matvecmul(rotate, look);
   };
+
   let viewMatrix = Patch.Mat4f.make();
   Patch.Mat4f.lookAt(
     viewMatrix,
@@ -234,7 +222,7 @@ let drawScene = (window, context, program, lightingProgram, models, dt) => {
     pos,
     [|0., 1., 0.|],
   );
-  let viewMatrix = Patch.Mat4f.toJsMat4(viewMatrix);
+  let viewMatrix = Patch.Mat4f.toGlMat4(viewMatrix);
 
   let modelMatrix = Gl.Mat4.create();
   if (first^) {
@@ -242,8 +230,35 @@ let drawScene = (window, context, program, lightingProgram, models, dt) => {
     first := false;
   };
 
-  let cubebuffers = Types.StringMap.find("cube", models);
-  let drawWithOffset = (x, y, z, scale, grey) => {
+  let drawGuy = (x, z) => {
+    Gl.Mat4.identity(~out=modelMatrix);
+    Gl.Mat4.translate(
+      ~out=modelMatrix,
+      ~matrix=modelMatrix,
+      ~vec=[|x, 1.3, z|],
+    );
+    Gl.Mat4.rotate(
+      ~out=modelMatrix,
+      ~matrix=modelMatrix,
+      ~rad=Patch.pi /. 2.,
+      ~vec=[|1., 0., 0.|],
+    );
+    let grey = 1.0;
+    let s = 0.35;
+    Gl.Mat4.scale(~out=modelMatrix, ~matrix=modelMatrix, ~vec=[|s, s, s|]);
+    Draw.drawModel(
+      projectionMatrix,
+      modelMatrix,
+      viewMatrix,
+      pos,
+      (grey, grey, grey, grey),
+      context,
+      lightingProgram,
+      Types.StringMap.find("guy", models),
+    );
+  };
+
+  let drawWithOffset = (x, y, z, scale, model, grey) => {
     Gl.Mat4.identity(~out=modelMatrix);
     Gl.Mat4.rotate(
       ~out=modelMatrix,
@@ -262,16 +277,17 @@ let drawScene = (window, context, program, lightingProgram, models, dt) => {
       modelMatrix,
       viewMatrix,
       pos,
-      grey,
+      (grey, grey, grey, grey),
       context,
       lightingProgram,
-      cubebuffers,
+      model,
     );
   };
 
   let wallScale = [|1.0, 3.0, 1.0|];
   let floorScale = [|40.0, 1.0, 40.0|];
 
+  let cube = Types.StringMap.find("cube", models);
   Gl.useProgram(~context, lightingProgram.program);
   for (y in 0 to Maze.mazeDef.height - 1) {
     for (x in 0 to Maze.mazeDef.width - 1) {
@@ -281,26 +297,19 @@ let drawScene = (window, context, program, lightingProgram, models, dt) => {
           0.0,
           float_of_int(y),
           wallScale,
+          cube,
           1.0,
         );
       };
     };
   };
-  drawWithOffset(0.0, -1.0, 0.0, floorScale, 0.3);
-  drawWithOffset(0.0, 3.0, 0.0, floorScale, 0.3);
+  drawWithOffset(0.0, -1.0, 0.0, floorScale, cube, 0.3);
+  drawWithOffset(0.0, 3.0, 0.0, floorScale, cube, 0.3);
+
+  drawGuy(5.0, 3.0);
 
   Gl.Mat4.identity(~out=modelMatrix);
   Gl.Mat4.identity(~out=viewMatrix);
-  /* let gunMoveAmount = Patch.Vec3f.make(); */
-  /* Patch.Vec3f.scale(gunMoveAmount, look, -50.0); */
-  /* Js.log(pos); */
-  /* Js.log(gunMoveAmount); */
-  /* let [|gunx, guny, gunz|] = Patch.Vec3f.(pos + gunMoveAmount); */
-  /* Gl.Mat4.translate( */
-  /*   ~out=modelMatrix, */
-  /*   ~matrix=modelMatrix, */
-  /*   ~vec=[|gunx, (0.5), gunz|], */
-  /* ); */
   Gl.Mat4.translate(
     ~out=modelMatrix,
     ~matrix=modelMatrix,
@@ -330,65 +339,44 @@ let drawScene = (window, context, program, lightingProgram, models, dt) => {
     modelMatrix,
     viewMatrix,
     pos,
-    1.0,
+    (1.0, 1.0, 1.0, 1.0),
     context,
     program,
     Types.StringMap.find("gun", models),
   );
-};
-
-let setupTexture = (context, image) => {
-  let filter = Constants.linear;
-  let texture = Gl.createTexture(~context);
-  Gl.bindTexture(~context, ~target=Constants.texture_2d, ~texture);
-  Gl.texImage2DWithImage(
-    ~context,
-    ~target=Constants.texture_2d,
-    ~level=0,
-    ~image,
-  );
-  Gl.texParameteri(
-    ~context,
-    ~target=Constants.texture_2d,
-    ~pname=Constants.texture_mag_filter,
-    ~param=filter,
-  );
-  Gl.texParameteri(
-    ~context,
-    ~target=Constants.texture_2d,
-    ~pname=Constants.texture_min_filter,
-    ~param=filter,
-  );
-  texture;
-};
-
-let loadModels = (names: list((string, string, string)), context, cb) => {
-  open Types;
-  let numModels = List.length(names);
-  let map = ref(StringMap.empty);
-  List.map(
-    ((name, model, image)) =>
-      ObjLoader.loadModel(model, bufferArrays =>
-        Gl.loadImage(
-          ~filename=image,
-          ~loadOption=LoadRGBA,
-          ~callback=
-            imageData =>
-              switch (imageData) {
-              | None => failwith("Could not load image")
-              | Some(img) =>
-                let texture = setupTexture(context, img);
-                let buffers = initBuffers(context, bufferArrays, texture);
-                map := StringMap.add(name, buffers, map^);
-                if (StringMap.cardinal(map^) == numModels) {
-                  cb(map^);
-                };
-              },
-          (),
-        )
-      ),
-    names,
-  );
+  if (keys.space) {
+    Gl.Mat4.identity(~out=modelMatrix);
+    Gl.Mat4.identity(~out=viewMatrix);
+    Gl.Mat4.translate(
+      ~out=modelMatrix,
+      ~matrix=modelMatrix,
+      ~vec=[|(-0.04), (-0.3), (-1.6)|],
+    );
+    let scale = 0.05 *. (sin(time^ *. 50.0) +. 1.0);
+    Gl.Mat4.scale(
+      ~out=modelMatrix,
+      ~matrix=modelMatrix,
+      ~vec=[|scale, scale, scale|],
+    );
+    Gl.Mat4.rotate(
+      ~out=modelMatrix,
+      ~matrix=modelMatrix,
+      ~rad=1.0,
+      ~vec=[|1., 0., 0.|],
+    );
+    Gl.useProgram(~context, program.Shaders.program);
+    let alpha = sin(time^) *. 1.0;
+    Draw.drawModel(
+      projectionMatrix,
+      modelMatrix,
+      viewMatrix,
+      pos,
+      (4.0, 2.0, 2.0, alpha),
+      context,
+      program,
+      Types.StringMap.find("explode", models),
+    );
+  };
 };
 
 let window = Gl.Window.init(~screen="main", ~argv=Sys.argv);
@@ -400,10 +388,24 @@ Gl.enable(~context, Constants.depth_test);
 Gl.enable(~context, Patch.cull_face);
 let program = createProgram(context, Shaders.default);
 let lightingProgram = createProgram(context, Shaders.distanceLit);
-loadModels(
+let w = Gl.Window.getWidth(window);
+let h = Gl.Window.getHeight(window);
+let projectionMatrix = Gl.Mat4.create();
+
+Patch.perspective(
+  ~out=projectionMatrix,
+  ~fovy=45. *. Patch.pi /. 180.,
+  ~aspect=float_of_int(w) /. float_of_int(h),
+  ~near=0.1,
+  ~far=100.0,
+);
+
+Draw.loadModels(
   [
     ("cube", "./models/texcube.obj", "./textures/wall_pot.png"),
     ("gun", "./models/gun.obj", "./textures/guncolors.png"),
+    ("explode", "./models/explode.obj", "./textures/explosion.png"),
+    ("guy", "./models/guy.obj", "./textures/guy.png"),
   ],
   context,
   models => {
@@ -411,6 +413,7 @@ loadModels(
       drawScene(
         window,
         context,
+        projectionMatrix,
         program,
         lightingProgram,
         models,

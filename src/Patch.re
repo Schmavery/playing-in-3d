@@ -51,7 +51,7 @@ module Vec3f = {
 
 module Mat4f = {
   type t = array(float);
-  let toJsMat4 = m: Reasongl.Gl.Mat4.t => Obj.magic(m);
+  let toGlMat4 = m: Reasongl.Gl.Mat4.t => Obj.magic(m);
   let make = (): t => Array.make(16, 0.);
   let identity = out => {
     out[0] = 1.;
