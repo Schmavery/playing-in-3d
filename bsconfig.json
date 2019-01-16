@@ -4,9 +4,14 @@
     "dir": "src"
   }],
   "bs-dependencies": ["Reasongl"],
-  "entries": [ {
+  "entries": [
+    {
     "backend": "js",
     "main-module": "Index"
-  }],
+    }, {
+    "backend": "native",
+    "main-module": "Index"
+    }
+  ],
   "refmt": 3
 }

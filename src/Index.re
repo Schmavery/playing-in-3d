@@ -215,14 +215,13 @@ let drawScene =
     Patch.Mat3f.matvecmul(rotate, look);
   };
 
-  let viewMatrix = Patch.Mat4f.make();
-  Patch.Mat4f.lookAt(
+  let viewMatrix = Gl.Mat4.create();
+  Gl.Mat4.lookAt(
     viewMatrix,
     Patch.Vec3f.(look + pos),
     pos,
     [|0., 1., 0.|],
   );
-  let viewMatrix = Patch.Mat4f.toGlMat4(viewMatrix);
 
   let modelMatrix = Gl.Mat4.create();
   if (first^) {
@@ -385,14 +384,14 @@ let windowH = 480;
 Gl.Window.setWindowSize(~window, ~width=windowW, ~height=windowH);
 let context = Gl.Window.getContext(window);
 Gl.enable(~context, Constants.depth_test);
-Gl.enable(~context, Patch.cull_face);
+Gl.enable(~context, Constants.cull_face);
 let program = createProgram(context, Shaders.default);
 let lightingProgram = createProgram(context, Shaders.distanceLit);
 let w = Gl.Window.getWidth(window);
 let h = Gl.Window.getHeight(window);
 let projectionMatrix = Gl.Mat4.create();
 
-Patch.perspective(
+Gl.Mat4.perspective(
   ~out=projectionMatrix,
   ~fovy=45. *. Patch.pi /. 180.,
   ~aspect=float_of_int(w) /. float_of_int(h),
