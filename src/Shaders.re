@@ -74,7 +74,7 @@ let default = {
   void main(void) {
     vec4 s = texture2D(uSampler, vUV);
     vec4 ambient = vec4(0.2, 0.2, 0.2, 0.0);
-    vec4 lightDirection = normalize(vec4(1.0, -1.0, 0.0, 0.0));
+    vec4 lightDirection = normalize(vec4(0.0, -1.0, -1.0, 0.0));
     /* float l = clamp(-dot(vNormal, lightDirection), 0.0, 1.0); */
     float l = clamp(-dot(vNormal, lightDirection), 0.0, 1.0);
     /* float l = length(dot(vNormal, normalize(lightDirection))); */

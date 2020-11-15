@@ -242,7 +242,7 @@ let drawScene =
       ~rad=Patch.pi /. 2.,
       ~vec=[|1., 0., 0.|],
     );
-    let grey = 1.0;
+    let grey = 1.5;
     let s = 0.35;
     Gl.Mat4.scale(~out=modelMatrix, ~matrix=modelMatrix, ~vec=[|s, s, s|]);
     Draw.drawModel(
@@ -370,7 +370,7 @@ let drawScene =
       modelMatrix,
       viewMatrix,
       pos,
-      (4.0, 2.0, 2.0, alpha),
+      (3.0, 1.0, 1.0, alpha),
       context,
       program,
       Types.StringMap.find("explode", models),
@@ -382,6 +382,7 @@ let window = Gl.Window.init(~screen="main", ~argv=Sys.argv);
 let windowW = 640;
 let windowH = 480;
 Gl.Window.setWindowSize(~window, ~width=windowW, ~height=windowH);
+Gl.Window.setWindowTitle(~window, ~title="test");
 let context = Gl.Window.getContext(window);
 Gl.enable(~context, Constants.depth_test);
 Gl.enable(~context, Constants.cull_face);
@@ -398,6 +399,17 @@ Gl.Mat4.perspective(
   ~near=0.1,
   ~far=100.0,
 );
+
+let mouseMove = (~x, ~y) => {
+   Printf.printf("mouse: %d, %d\n%!", x, y);
+  /* () */
+};
+
+let mouseDown = (~button, ~state, ~x, ~y) => {
+  Printf.printf("mousedown: %d, %d\n%!", x, y);
+  Gl.Window.setPointerLock(! Gl.Window.getPointerLock(window), window);
+};
+
 
 Draw.loadModels(
   [
@@ -419,6 +431,6 @@ Draw.loadModels(
         dt /. 1000.,
       );
     /* TODO Why is this ignored */
-    ignore @@ Gl.render(~window, ~displayFunc, ~keyDown, ~keyUp, ());
+    ignore @@ Gl.render(~window, ~displayFunc, ~keyDown, ~keyUp, ~mouseDown, ~mouseMove, ());
   },
 );
